@@ -6,200 +6,110 @@ import os
 import asyncio
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Setup - REMOVE built-in help
+# Minimal bot setup
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
+
+# DISABLE EVERYTHING THAT COULD CONFLICT
+bot = commands.Bot(
+    command_prefix='!',
+    intents=intents,
+    help_command=None,  # NO BUILT-IN HELP
+    sync_commands=False  # NO AUTO SYNC
+)
 
 @bot.event
 async def on_ready():
-    print(f'✅ {bot.user} is online!')
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.playing, 
-            name="!info | !obfuscate"
-        )
-    )
+    print(f"✅ BOT ONLINE: {bot.user}")
 
-@bot.command(name='obfuscate')
-async def obfuscate_cmd(ctx):
-    """Obfuscate Lua code from attachment"""
+def is_lua_code(content):
+    """Check if content is actually Lua code"""
+    # Look for Lua keywords
+    lua_keywords = [
+        'local ', 'function', 'if ', 'then', 'end', 'for ', 'while ',
+        'repeat ', 'until', 'do ', 'return', 'break', 'print(', 'require(',
+        'table.', 'string.', 'math.', ':=', '--', 'elseif', 'else'
+    ]
     
+    content_lower = content.lower()
+    
+    # Count how many Lua keywords are in the file
+    keyword_count = sum(1 for keyword in lua_keywords if keyword in content_lower)
+    
+    # If at least 2 Lua keywords found, it's probably Lua
+    return keyword_count >= 2
+
+# ONLY 1 COMMAND - OBFUSCATE
+@bot.command(name='obfuscate')
+async def obfuscate(ctx):
+    """Obfuscate Lua file"""
+    
+    # Check attachment
     if not ctx.message.attachments:
-        embed = discord.Embed(
-            title="❌ No File",
-            description="Attach .lua file",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
+        await ctx.send("❌ Attach a file")
         return
     
     file = ctx.message.attachments[0]
     
-    if not file.filename.endswith('.lua'):
-        embed = discord.Embed(
-            title="❌ Wrong File",
-            description="Upload .lua only",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
-        return
-    
+    # Read file first
     try:
         await ctx.defer()
-        
-        code = await file.read()
-        code = code.decode('utf-8')
-        
-        if len(code) > 1000000:
-            embed = discord.Embed(
-                title="❌ Too Large",
-                description="Max 1MB",
-                color=discord.Color.red()
-            )
-            await ctx.send(embed=embed)
-            return
-        
+        content = await file.read()
+        content_str = content.decode('utf-8')
+    except Exception as e:
+        await ctx.send(f"❌ Cannot read file: {str(e)[:100]}")
+        return
+    
+    # Check if content is Lua (not just filename)
+    if not is_lua_code(content_str):
+        await ctx.send("❌ File is not Lua code\nMust contain Lua keywords like: function, local, if, print, etc.")
+        return
+    
+    # Run obfuscator
+    try:
         with tempfile.TemporaryDirectory() as tmpdir:
             input_file = os.path.join(tmpdir, 'input.lua')
             output_file = os.path.join(tmpdir, 'output.lua')
             
-            with open(input_file, 'w', encoding='utf-8') as f:
-                f.write(code)
+            # Write input
+            with open(input_file, 'w') as f:
+                f.write(content_str)
             
-            try:
-                result = await asyncio.create_subprocess_exec(
-                    'lua',
-                    'main_obfuscator.lua',
-                    input_file,
-                    output_file,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd='/app'
-                )
-                
-                stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=30.0)
-                
-            except FileNotFoundError:
-                result = await asyncio.create_subprocess_exec(
-                    'lua',
-                    'main_obfuscator.lua',
-                    input_file,
-                    output_file,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                
-                stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=30.0)
-            
-            if result.returncode != 0:
-                error_msg = stderr.decode('utf-8', errors='ignore')[:500]
-                embed = discord.Embed(
-                    title="❌ Error",
-                    description=f"```\n{error_msg}\n```",
-                    color=discord.Color.red()
-                )
-                await ctx.send(embed=embed)
-                return
-            
-            if not os.path.exists(output_file):
-                embed = discord.Embed(
-                    title="❌ No Output",
-                    description="Failed to generate",
-                    color=discord.Color.red()
-                )
-                await ctx.send(embed=embed)
-                return
-            
-            with open(output_file, 'r', encoding='utf-8') as f:
-                obfuscated = f.read()
-            
-            orig_lines = len(code.split('\n'))
-            obf_lines = len(obfuscated.split('\n'))
-            orig_size = len(code)
-            obf_size = len(obfuscated)
-            
-            await ctx.send(file=discord.File(output_file, filename='obfuscated.lua'))
-            
-            embed = discord.Embed(
-                title="✅ Done!",
-                color=discord.Color.green()
+            # Run Lua script
+            result = await asyncio.create_subprocess_exec(
+                'lua',
+                'main_obfuscator.lua',
+                input_file,
+                output_file,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
-            embed.add_field(name="Lines", value=f"{orig_lines} → {obf_lines}", inline=True)
-            embed.add_field(name="Size", value=f"{(obf_size/orig_size*100):.1f}%", inline=True)
-            embed.add_field(name="Applied", value="Variables, Numbers, Strings, Dead Code", inline=False)
             
-            await ctx.send(embed=embed)
-    
-    except asyncio.TimeoutError:
-        embed = discord.Embed(
-            title="⏱️ Timeout",
-            description="Took too long",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
+            stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=30)
+            
+            # Check output exists
+            if not os.path.exists(output_file):
+                await ctx.send("❌ Obfuscation failed")
+                return
+            
+            # Send file
+            await ctx.send(file=discord.File(output_file, filename='obfuscated.lua'))
+            await ctx.send("✅ Done!")
     
     except Exception as e:
-        embed = discord.Embed(
-            title="❌ Error",
-            description=str(e)[:500],
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
+        await ctx.send(f"❌ Error: {str(e)[:100]}")
 
-@bot.command(name='info')
-async def info_cmd(ctx):
-    """Show information and commands"""
-    embed = discord.Embed(
-        title="🛡️ Lua Obfuscator Bot",
-        description="Advanced code obfuscation",
-        color=discord.Color.blue()
-    )
-    embed.add_field(
-        name="📖 How to Use",
-        value="1. Attach .lua file\n2. Type `!obfuscate`\n3. Download result",
-        inline=False
-    )
-    embed.add_field(
-        name="🔒 Features",
-        value="✓ Variable renaming\n✓ Number encoding\n✓ String splitting\n✓ Dead code\n✓ Anti-debug",
-        inline=False
-    )
-    embed.add_field(
-        name="📋 Commands",
-        value="`!obfuscate` - Obfuscate attached file\n`!info` - Show this message\n`!status` - Bot status",
-        inline=False
-    )
-    await ctx.send(embed=embed)
-
-@bot.command(name='status')
-async def status_cmd(ctx):
-    """Bot status"""
-    embed = discord.Embed(
-        title="✅ Bot Online",
-        color=discord.Color.green()
-    )
-    embed.add_field(name="Ping", value=f"{bot.latency * 1000:.0f}ms", inline=True)
-    embed.add_field(name="Status", value="Ready for obfuscation", inline=True)
-    await ctx.send(embed=embed)
-
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        await ctx.send("❌ Unknown command. Type `!info`")
-    else:
-        await ctx.send(f"❌ Error: {str(error)[:100]}")
-
-# Main
-if __name__ == '__main__':
+# START BOT
+try:
     token = os.environ.get('DISCORD_TOKEN')
     if not token:
-        print("❌ ERROR: DISCORD_TOKEN not set!")
-        print("Add DISCORD_TOKEN variable in Railway")
+        print("❌ NO DISCORD_TOKEN")
         exit(1)
-    
-    print("🤖 Starting bot...")
+    print("🤖 Starting...")
     bot.run(token)
+except Exception as e:
+    print(f"❌ ERROR: {e}")
+    exit(1)
+            
