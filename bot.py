@@ -6,8 +6,10 @@ import os
 import asyncio
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 
+# Setup
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
@@ -28,8 +30,8 @@ async def obfuscate_cmd(ctx):
     
     if not ctx.message.attachments:
         embed = discord.Embed(
-            title="❌ No File Provided",
-            description="Attach .lua file to obfuscate",
+            title="❌ No File",
+            description="Attach .lua file",
             color=discord.Color.red()
         )
         await ctx.send(embed=embed)
@@ -40,7 +42,7 @@ async def obfuscate_cmd(ctx):
     if not file.filename.endswith('.lua'):
         embed = discord.Embed(
             title="❌ Wrong File",
-            description="Upload .lua file only!",
+            description="Upload .lua only",
             color=discord.Color.red()
         )
         await ctx.send(embed=embed)
@@ -97,7 +99,7 @@ async def obfuscate_cmd(ctx):
                 error_msg = stderr.decode('utf-8', errors='ignore')[:500]
                 embed = discord.Embed(
                     title="❌ Error",
-                    description=f"```{error_msg}```",
+                    description=f"```\n{error_msg}\n```",
                     color=discord.Color.red()
                 )
                 await ctx.send(embed=embed)
@@ -105,8 +107,8 @@ async def obfuscate_cmd(ctx):
             
             if not os.path.exists(output_file):
                 embed = discord.Embed(
-                    title="❌ Output Error",
-                    description="No output generated",
+                    title="❌ No Output",
+                    description="Failed to generate",
                     color=discord.Color.red()
                 )
                 await ctx.send(embed=embed)
@@ -128,13 +130,14 @@ async def obfuscate_cmd(ctx):
             )
             embed.add_field(name="Lines", value=f"{orig_lines} → {obf_lines}", inline=True)
             embed.add_field(name="Size", value=f"{(obf_size/orig_size*100):.1f}%", inline=True)
+            embed.add_field(name="Applied", value="Variables, Numbers, Strings, Dead Code", inline=False)
             
             await ctx.send(embed=embed)
     
     except asyncio.TimeoutError:
         embed = discord.Embed(
             title="⏱️ Timeout",
-            description="Too long (max 30s)",
+            description="Took too long",
             color=discord.Color.red()
         )
         await ctx.send(embed=embed)
@@ -151,20 +154,46 @@ async def obfuscate_cmd(ctx):
 async def help_cmd(ctx):
     """Show help"""
     embed = discord.Embed(
-        title="🛡️ Lua Obfuscator",
-        description="Obfuscate Lua code",
+        title="🛡️ Lua Obfuscator Bot",
+        description="Advanced code obfuscation",
         color=discord.Color.blue()
     )
     embed.add_field(
-        name="How to use",
-        value="1. Attach .lua file\n2. Type !obfuscate\n3. Download result",
+        name="📖 How to Use",
+        value="1. Attach .lua file\n2. Type `!obfuscate`\n3. Download result",
+        inline=False
+    )
+    embed.add_field(
+        name="🔒 Features",
+        value="✓ Variable renaming\n✓ Number encoding\n✓ String splitting\n✓ Dead code\n✓ Anti-debug",
         inline=False
     )
     await ctx.send(embed=embed)
 
-token = os.environ.get('DISCORD_TOKEN')
-if not token:
-    print("ERROR: DISCORD_TOKEN not set!")
-    exit(1)
+@bot.command(name='status')
+async def status_cmd(ctx):
+    """Bot status"""
+    embed = discord.Embed(
+        title="✅ Bot Online",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Ping", value=f"{bot.latency * 1000:.0f}ms", inline=True)
+    await ctx.send(embed=embed)
 
-bot.run(token)
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        await ctx.send("❌ Unknown command. Type `!help`")
+    else:
+        await ctx.send(f"❌ Error: {str(error)[:100]}")
+
+# Main
+if __name__ == '__main__':
+    token = os.environ.get('DISCORD_TOKEN')
+    if not token:
+        print("❌ ERROR: DISCORD_TOKEN not set!")
+        print("Add DISCORD_TOKEN variable in Railway")
+        exit(1)
+    
+    print("🤖 Starting bot...")
+    bot.run(token)
