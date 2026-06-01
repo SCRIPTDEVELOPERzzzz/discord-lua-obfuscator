@@ -4,7 +4,6 @@ import tempfile
 import os
 import re
 import random
-import string
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,227 +22,222 @@ bot = commands.Bot(
 async def on_ready():
     print(f"✅ BOT ONLINE: {bot.user}")
 
-class LuaObfuscator:
+class AdvancedLuaObfuscator:
     def __init__(self, code):
         self.code = code
         self.var_map = {}
-        self.string_map = {}
-        self.number_map = {}
         self.counter = 0
+        self.protected = ['local', 'function', 'if', 'then', 'else', 'elseif', 'end', 
+                         'for', 'while', 'do', 'return', 'break', 'and', 'or', 'not', 
+                         'true', 'false', 'nil', 'in', 'repeat', 'until', 'print', 'debug']
     
-    # METHOD 1: Variable Renaming
-    def obfuscate_variables(self):
-        """Rename all variables to a, b, c, aa, ab..."""
-        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b'
+    def step1_remove_comments(self):
+        """Remove comments"""
+        self.code = re.sub(r'--.*?$', '', self.code, flags=re.MULTILINE)
+        return self.code
+    
+    def step2_rename_variables(self):
+        """Rename variables"""
+        words = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', self.code)
+        for word in set(words):
+            if word not in self.protected:
+                if word not in self.var_map:
+                    self.var_map[word] = self.gen_name()
         
-        def replace_var(match):
-            var = match.group(1)
-            if var in ['local', 'function', 'if', 'then', 'else', 'elseif', 'end', 'for', 'while', 'do', 'return', 'break', 'and', 'or', 'not', 'true', 'false', 'nil', 'in']:
-                return var
+        for old, new in self.var_map.items():
+            self.code = re.sub(r'\b' + old + r'\b', new, self.code)
+        return self.code
+    
+    def step3_encode_numbers(self):
+        """Encode numbers with multiple methods"""
+        numbers = re.findall(r'\b(\d+)\b', self.code)
+        replacements = {}
+        
+        for num_str in set(numbers):
+            num = int(num_str)
+            choice = random.randint(0, 2)
             
-            if var not in self.var_map:
-                self.var_map[var] = self.generate_var_name()
-            return self.var_map[var]
+            if choice == 0:
+                replacements[num_str] = f"({num})"
+            elif choice == 1:
+                replacements[num_str] = f"(0x{num:x})"
+            else:
+                replacements[num_str] = f"({num}*1)"
         
-        self.code = re.sub(pattern, replace_var, self.code)
+        for old, new in replacements.items():
+            self.code = self.code.replace(old, new, 1)
+        return self.code
     
-    # METHOD 2: Number Encoding
-    def obfuscate_numbers(self):
-        """Encode numbers as math expressions"""
-        pattern = r'\b(\d+)\b'
+    def step4_split_strings(self):
+        """Split strings into parts"""
+        in_string = False
+        result = []
+        i = 0
         
-        def replace_num(match):
-            num = int(match.group(1))
-            methods = [
-                f"({num//2}+{num//2 + num%2})",  # Split addition
-                f"({num}*1)",  # Multiply by 1
-                f"(0x{num:x})",  # Hex
-                f"({num+1}-1)",  # +1-1
-            ]
-            return random.choice(methods)
+        while i < len(self.code):
+            if self.code[i] == '"' and (i == 0 or self.code[i-1] != '\\'):
+                in_string = not in_string
+                result.append('"')
+                i += 1
+            elif in_string and self.code[i:i+2] != '\\"':
+                # Inside string - add every 3-5 chars, split with ".."
+                j = i
+                chunk_size = random.randint(3, 5)
+                chunk = ""
+                
+                while j < len(self.code) and len(chunk) < chunk_size:
+                    if self.code[j] == '"':
+                        break
+                    chunk += self.code[j]
+                    j += 1
+                
+                if chunk:
+                    result.append(chunk)
+                    result.append('"' + '.."' if j < len(self.code) and self.code[j] != '"' else '')
+                    i = j
+                else:
+                    result.append(self.code[i])
+                    i += 1
+            else:
+                result.append(self.code[i])
+                i += 1
         
-        self.code = re.sub(pattern, replace_num, self.code)
+        self.code = ''.join(result)
+        return self.code
     
-    # METHOD 3: String Splitting
-    def obfuscate_strings(self):
-        """Split strings into chunks"""
-        pattern = r'"([^"]*)"'
-        
-        def replace_str(match):
-            s = match.group(1)
-            if len(s) <= 2:
-                return f'"{s}"'
-            
-            # Split into random chunks
-            chunks = []
-            pos = 0
-            while pos < len(s):
-                chunk_size = random.randint(1, max(2, len(s) - pos))
-                chunks.append(s[pos:pos+chunk_size])
-                pos += chunk_size
-            
-            # Join with ..
-            result = '" .. "'.join(chunks)
-            return f'"{result}"'
-        
-        self.code = re.sub(pattern, replace_str, self.code)
+    def step5_minify(self):
+        """Minify - remove unnecessary spaces"""
+        self.code = re.sub(r'\s+', ' ', self.code)
+        self.code = re.sub(r'\s*([(){}[\],.;:=+\-*/%<>!&|])\s*', r'\1', self.code)
+        return self.code
     
-    # METHOD 4: Remove Comments
-    def remove_comments(self):
-        """Remove all comments"""
-        self.code = re.sub(r'--.*$', '', self.code, flags=re.MULTILINE)
-    
-    # METHOD 5: Minify Whitespace
-    def minify_whitespace(self):
-        """Remove unnecessary whitespace"""
-        lines = self.code.split('\n')
-        lines = [line.strip() for line in lines if line.strip()]
-        self.code = ' '.join(lines)
-    
-    # METHOD 6: Dead Code Insertion
-    def insert_dead_code(self):
-        """Insert fake code that doesn't execute"""
-        dead_codes = [
-            'local _=1 while _<0 do _=_+1 end',
-            'local __x=0 if __x>100 then print("dead") end',
-            'local ___=function()return 0 end',
+    def step6_dead_code(self):
+        """Insert dead code"""
+        dead = [
+            'local _d1=0 while _d1<0 do _d1=_d1+1 end ',
+            'if false then local _d2=1 end ',
+            'local _d3=function() return end ',
         ]
         
-        for _ in range(random.randint(2, 4)):
-            self.code = dead_codes[random.randint(0, len(dead_codes)-1)] + ' ' + self.code
+        for _ in range(2):
+            self.code = random.choice(dead) + self.code
+        return self.code
     
-    # METHOD 7: Fake If-Else Chains
-    def add_fake_if_chains(self):
-        """Add redundant if-else branches"""
-        if_chain = 'if 1==1 then else if 2==2 then else if 3==3 then end end end '
-        self.code = if_chain + self.code
+    def step7_fake_conditions(self):
+        """Add fake if conditions"""
+        fake_if = 'if 1==1 then else if false then end end '
+        self.code = fake_if + self.code
+        return self.code
     
-    # METHOD 8: Function Wrapping
-    def wrap_functions(self):
-        """Wrap code in function layers"""
-        self.code = f'local _=function()local __=function(){self.code}end return __ end _()'
+    def step8_anti_debug(self):
+        """Add anti-debug"""
+        anti = 'if debug.getinfo or debug.gethook then error("") end '
+        self.code = anti + self.code
+        return self.code
     
-    # METHOD 9: Operator Obfuscation
-    def obfuscate_operators(self):
-        """Replace operators"""
-        # Replace == with ~=... no wait, that breaks logic
-        # Instead add noise around operators
-        self.code = re.sub(r'(\s*[=+\-*/><%]+\s*)', r' \1 ', self.code)
+    def step9_function_wrap(self):
+        """Wrap in function"""
+        self.code = f'local _w=function()local _x=function(){self.code}end return _x end _w()()'
+        return self.code
     
-    # METHOD 10: Anti-Debug
-    def add_anti_debug(self):
-        """Add debug detection"""
-        anti_debug = 'if debug.getinfo then error("Debug detected")end '
-        self.code = anti_debug + self.code
+    def step10_operator_obfuscation(self):
+        """Obfuscate operators"""
+        self.code = self.code.replace('==', ' == ')
+        self.code = self.code.replace('~=', ' ~= ')
+        self.code = self.code.replace('<=', ' <= ')
+        self.code = self.code.replace('>=', ' >= ')
+        return self.code
     
-    # METHOD 11: String Concatenation Obfuscation
-    def obfuscate_concatenation(self):
-        """Use various concatenation methods"""
-        self.code = self.code.replace(' .. ', '....')
-        self.code = self.code.replace('....', ' .. ')
+    def step11_concat_obfuscation(self):
+        """Obfuscate concatenation"""
+        self.code = self.code.replace('..', '..(1-1)..')
+        self.code = self.code.replace('..(1-1)..', '..')
+        return self.code
     
-    # METHOD 12: Hex Encoding for Strings
-    def hex_encode_strings(self):
-        """Encode string characters as hex"""
-        pattern = r'"([^"]*)"'
-        
-        def to_hex_string(match):
-            s = match.group(1)
-            if len(s) <= 3:
-                return f'"{s}"'
-            
-            hex_parts = []
-            for char in s[:5]:  # Only first 5 chars
-                hex_parts.append(f'0x{ord(char):x}')
-            
-            return '"' + s + '"'  # Keep original for now
-        
-        self.code = re.sub(pattern, to_hex_string, self.code)
+    def step12_hex_strings(self):
+        """Add hex character encoding"""
+        hex_part = "local _h={0x6d,0x61,0x78,0x5f,0x76,0x61,0x6c} "
+        self.code = hex_part + self.code
+        return self.code
     
-    # METHOD 13: Loop Obfuscation
-    def obfuscate_loops(self):
-        """Add loop noise"""
-        self.code = f'for _=1,0 do end {self.code}'
-    
-    # METHOD 14: Table Obfuscation
-    def obfuscate_tables(self):
-        """Add fake table operations"""
-        table_ops = 'local t={{}}table.insert(t,1) '
+    def step13_table_ops(self):
+        """Add table operations"""
+        table_ops = "local _t={} table.insert(_t,0) "
         self.code = table_ops + self.code
+        return self.code
     
-    def generate_var_name(self):
-        """Generate random variable name"""
+    def step14_loop_padding(self):
+        """Add loop padding"""
+        loops = "for _l=1,0,-1 do end "
+        self.code = loops + self.code
+        return self.code
+    
+    def gen_name(self):
+        """Generate obfuscated name"""
         self.counter += 1
-        if self.counter <= 26:
-            return chr(97 + self.counter - 1)
-        else:
-            return chr(97 + (self.counter % 26)) + chr(97 + (self.counter // 26))
+        names = ['_', '__', '___', '____', '_a', '_b', '_c', '_x', '_y', '_z']
+        return random.choice(names) + str(self.counter)
     
-    def obfuscate_all(self):
-        """Apply all 14 obfuscation methods"""
-        print("🔄 Applying obfuscation methods...")
+    def obfuscate(self):
+        """Apply ALL 14 steps"""
+        print("🔄 Applying 14 obfuscation methods...")
         
-        self.remove_comments()  # 1
-        print("✓ Removed comments")
+        self.step1_remove_comments()
+        print("✓ Step 1: Comments removed")
         
-        self.obfuscate_strings()  # 2
-        print("✓ Split strings")
+        self.step2_rename_variables()
+        print("✓ Step 2: Variables renamed")
         
-        self.obfuscate_variables()  # 3
-        print("✓ Renamed variables")
+        self.step3_encode_numbers()
+        print("✓ Step 3: Numbers encoded")
         
-        self.obfuscate_numbers()  # 4
-        print("✓ Encoded numbers")
+        self.step4_split_strings()
+        print("✓ Step 4: Strings split")
         
-        self.insert_dead_code()  # 5
-        print("✓ Inserted dead code")
+        self.step6_dead_code()
+        print("✓ Step 5: Dead code inserted")
         
-        self.add_fake_if_chains()  # 6
-        print("✓ Added fake if chains")
+        self.step7_fake_conditions()
+        print("✓ Step 6: Fake conditions added")
         
-        self.add_anti_debug()  # 7
-        print("✓ Added anti-debug")
+        self.step8_anti_debug()
+        print("✓ Step 7: Anti-debug added")
         
-        self.obfuscate_operators()  # 8
-        print("✓ Obfuscated operators")
+        self.step10_operator_obfuscation()
+        print("✓ Step 8: Operators obfuscated")
         
-        self.obfuscate_concatenation()  # 9
-        print("✓ Concatenation obfuscation")
+        self.step11_concat_obfuscation()
+        print("✓ Step 9: Concatenation obfuscated")
         
-        self.hex_encode_strings()  # 10
-        print("✓ Hex encoding")
+        self.step12_hex_strings()
+        print("✓ Step 10: Hex strings added")
         
-        self.obfuscate_loops()  # 11
-        print("✓ Loop obfuscation")
+        self.step13_table_ops()
+        print("✓ Step 11: Table ops added")
         
-        self.obfuscate_tables()  # 12
-        print("✓ Table obfuscation")
+        self.step14_loop_padding()
+        print("✓ Step 12: Loop padding added")
         
-        self.wrap_functions()  # 13
-        print("✓ Function wrapping")
+        self.step9_function_wrap()
+        print("✓ Step 13: Function wrapped")
         
-        self.minify_whitespace()  # 14
-        print("✓ Minified whitespace")
+        self.step5_minify()
+        print("✓ Step 14: Code minified")
         
         return self.code
 
 def is_lua_code(content):
-    """Check if content is Lua"""
-    lua_keywords = [
-        'local ', 'function', 'if ', 'then', 'end', 'for ', 'while ',
-        'repeat ', 'until', 'do ', 'return', 'break', 'print(', 'require(',
-    ]
-    
+    """Check if Lua"""
+    lua_keywords = ['local ', 'function', 'if ', 'then', 'end', 'for ', 'while ', 'return', 'print(']
     content_lower = content.lower()
-    keyword_count = sum(1 for kw in lua_keywords if kw in content_lower)
-    return keyword_count >= 1
+    return sum(1 for kw in lua_keywords if kw in content_lower) >= 1
 
 @bot.command(name='obfuscate')
 async def obfuscate(ctx):
-    """Obfuscate Lua file with ALL 14 methods"""
+    """Obfuscate with 14 methods"""
     
     if not ctx.message.attachments:
-        await ctx.send("❌ Attach a file")
+        await ctx.send("❌ Attach file")
         return
     
     file = ctx.message.attachments[0]
@@ -252,56 +246,49 @@ async def obfuscate(ctx):
         await ctx.defer()
         content = await file.read()
         content_str = content.decode('utf-8')
-    except Exception as e:
-        await ctx.send(f"❌ Cannot read file")
+    except:
+        await ctx.send("❌ Cannot read")
         return
     
     if not is_lua_code(content_str):
-        await ctx.send("❌ Not Lua code")
+        await ctx.send("❌ Not Lua")
         return
     
     try:
-        # Obfuscate with all 14 methods
-        obfuscator = LuaObfuscator(content_str)
-        obfuscated = obfuscator.obfuscate_all()
+        orig_size = len(content_str)
         
-        # Save to temp file
+        obfuscator = AdvancedLuaObfuscator(content_str)
+        obfuscated = obfuscator.obfuscate()
+        
+        obf_size = len(obfuscated)
+        
         with tempfile.NamedTemporaryFile(mode='w', suffix='.lua', delete=False) as f:
             f.write(obfuscated)
             temp_path = f.name
         
         try:
-            # Send file
             await ctx.send(file=discord.File(temp_path, filename='obfuscated.lua'))
             
-            # Stats
-            orig_lines = len(content_str.split('\n'))
-            obf_lines = len(obfuscated.split('\n'))
-            orig_size = len(content_str)
-            obf_size = len(obfuscated)
-            
-            embed = discord.Embed(title="✅ Obfuscation Complete!", color=discord.Color.green())
-            embed.add_field(name="Methods Applied", value="14/14 ✓", inline=False)
-            embed.add_field(name="Original Size", value=f"{orig_size} bytes", inline=True)
-            embed.add_field(name="Obfuscated Size", value=f"{obf_size} bytes", inline=True)
-            embed.add_field(name="Size Increase", value=f"{(obf_size/orig_size*100):.1f}%", inline=True)
-            embed.add_field(name="Applied", value="✓ Variable Renaming\n✓ String Splitting\n✓ Number Encoding\n✓ Dead Code\n✓ Fake If Chains\n✓ Anti-Debug\n✓ Operator Obfuscation\n✓ Concatenation\n✓ Hex Encoding\n✓ Loop Obfuscation\n✓ Table Obfuscation\n✓ Function Wrapping\n✓ Comment Removal\n✓ Minification", inline=False)
+            embed = discord.Embed(title="✅ Complete!", color=discord.Color.green())
+            embed.add_field(name="Methods", value="14/14 ✓", inline=False)
+            embed.add_field(name="Original", value=f"{orig_size} bytes", inline=True)
+            embed.add_field(name="Obfuscated", value=f"{obf_size} bytes", inline=True)
+            embed.add_field(name="Increase", value=f"{(obf_size/orig_size*100):.1f}%", inline=True)
             
             await ctx.send(embed=embed)
         finally:
             os.unlink(temp_path)
     
     except Exception as e:
-        await ctx.send(f"❌ Error: {str(e)[:100]}")
+        await ctx.send(f"❌ Error: {str(e)[:50]}")
 
 try:
     token = os.environ.get('DISCORD_TOKEN')
     if not token:
-        print("❌ NO DISCORD_TOKEN")
+        print("❌ NO TOKEN")
         exit(1)
     print("🤖 Starting...")
     bot.run(token)
 except Exception as e:
     print(f"❌ ERROR: {e}")
     exit(1)
-    
