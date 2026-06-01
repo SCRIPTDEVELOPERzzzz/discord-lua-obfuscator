@@ -9,10 +9,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Setup
+# Setup - REMOVE built-in help
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 @bot.event
 async def on_ready():
@@ -20,7 +20,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.playing, 
-            name="!obfuscate | !help"
+            name="!info | !obfuscate"
         )
     )
 
@@ -150,9 +150,9 @@ async def obfuscate_cmd(ctx):
         )
         await ctx.send(embed=embed)
 
-@bot.command(name='help')
-async def help_cmd(ctx):
-    """Show help"""
+@bot.command(name='info')
+async def info_cmd(ctx):
+    """Show information and commands"""
     embed = discord.Embed(
         title="🛡️ Lua Obfuscator Bot",
         description="Advanced code obfuscation",
@@ -168,6 +168,11 @@ async def help_cmd(ctx):
         value="✓ Variable renaming\n✓ Number encoding\n✓ String splitting\n✓ Dead code\n✓ Anti-debug",
         inline=False
     )
+    embed.add_field(
+        name="📋 Commands",
+        value="`!obfuscate` - Obfuscate attached file\n`!info` - Show this message\n`!status` - Bot status",
+        inline=False
+    )
     await ctx.send(embed=embed)
 
 @bot.command(name='status')
@@ -178,12 +183,13 @@ async def status_cmd(ctx):
         color=discord.Color.green()
     )
     embed.add_field(name="Ping", value=f"{bot.latency * 1000:.0f}ms", inline=True)
+    embed.add_field(name="Status", value="Ready for obfuscation", inline=True)
     await ctx.send(embed=embed)
 
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send("❌ Unknown command. Type `!help`")
+        await ctx.send("❌ Unknown command. Type `!info`")
     else:
         await ctx.send(f"❌ Error: {str(error)[:100]}")
 
